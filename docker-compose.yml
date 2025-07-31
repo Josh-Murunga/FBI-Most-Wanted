@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: fbi_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: fbi_wanted
+      MYSQL_USER: devuser
+      MYSQL_PASSWORD: devpass
+    ports:
+      - "3406:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./server/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - backend
+
+  cache:
+    image: redis:alpine
+    container_name: fbi_cache
+    ports:
+      - "6479:6379"
+    networks:
+      - backend
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: fbi_server
+    ports:
+      - "5100:5000"
+    environment:
+      DB_HOST: db
+      DB_USER: devuser
+      DB_PASSWORD: devpass
+      DB_NAME: fbi_wanted
+      REDIS_HOST: cache
+      REDIS_PORT: 6379
+    volumes:
+      - ./server:/app
+    working_dir: /app
+    depends_on:
+      - db
+      - cache
+    networks:
+      - backend
+      - frontend
+    command: sh -c "npm install && npm run dev"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: fbi_client
+    ports:
+      - "3100:3000"
+    volumes:
+      - ./client:/app
+    working_dir: /app
+    depends_on:
+      - server
+    networks:
+      - frontend
+    command: sh -c "npm install && npm start"
+
+volumes:
+  mysql_data:
+
+networks:
+  backend:
+  frontend:
