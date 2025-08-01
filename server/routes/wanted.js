@@ -7,7 +7,7 @@ const wantedController = require('../controllers/wanted');
 router.use(authenticate);
 
 router.get('/', wantedController.getWantedList);
+router.get('/search', wantedController.searchWanted);
 router.get('/:uid', wantedController.getWantedPerson);
-// router.get('/search', wantedController.searchWanted);
 
 module.exports = router;

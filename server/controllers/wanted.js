@@ -169,4 +169,58 @@ const getWantedPerson = async (req, res) => {
     }
 };
 
-module.exports = { getWantedList, getWantedPerson, mapWantedList, mapWantedPerson };
+// Search endpoint: e.g., /api/wanted/search?name=john&page=1&pageSize=10
+const searchWanted = async (req, res) => {
+    try {
+        const { redisClient } = req.app.locals;
+        const page = parsePositiveInt(req.query.page, 1);
+        const pageSize = parsePositiveInt(req.query.pageSize, 10);
+
+        // Accept title, name (mapped to title), keywords, subject
+        const title = (req.query.title || req.query.name || '').toString().trim();
+        const keywords = (req.query.keywords || '').toString().trim();
+        const subject = (req.query.subject || '').toString().trim();
+
+        if (!title && !keywords && !subject) {
+            return res.status(400).json({ error: 'At least one search parameter required (title, keywords, or subject)' });
+        }
+
+        const params = { page, pageSize };
+        if (title) params.title = title;
+        if (keywords) params.keywords = keywords;
+        if (subject) params.subject = subject;
+
+        // Build cache key deterministically based on provided search params
+        const keyPieces = [
+            title ? `title:${title.toLowerCase()}` : null,
+            keywords ? `keywords:${keywords.toLowerCase()}` : null,
+            subject ? `subject:${subject.toLowerCase()}` : null,
+            `page:${page}`,
+            `size:${pageSize}`,
+        ].filter(Boolean);
+        const cacheKey = `wanted:search:${keyPieces.join(':')}`;
+
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
+        }
+
+        const response = await axios.get(`${FBI_API_BASE}/wanted`, {
+            params,
+            headers: {
+                'User-Agent': 'MyFBIClient/1.0 (+your-email@domain.com)', // identify yourself responsibly
+                'Accept': 'application/json'
+            },
+            timeout: 10000,
+        });
+
+        const mapped = mapWantedList(response.data);
+        await redisClient.set(cacheKey, JSON.stringify(mapped), 'EX', CACHE_EXPIRATION);
+        return res.json(mapped);
+    } catch (err) {
+        console.error('searchWanted error:', err.message || err);
+        return res.status(502).json({ error: 'Failed to perform search' });
+    }
+};
+
+module.exports = { getWantedList, getWantedPerson, searchWanted, mapWantedList, mapWantedPerson };

@@ -25,6 +25,9 @@ interface WantedPerson {
     eyes?: string | null;
     race?: string | null;
     nationality?: string | null;
+    sex?: string | null;
+    person_classification?: string | null;
+    status?: string | null;
 }
 
 interface WantedListResponse {
@@ -39,14 +42,14 @@ const Wanted = () => {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
 
-    const [wantedList, setWantedList] = useState<WantedPerson[]>([]);
+    const [list, setList] = useState<WantedPerson[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [page, setPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [hasMore, setHasMore] = useState(true);
 
-    // Search inputs (controlled)
+    // Search inputs
     const [searchTitle, setSearchTitle] = useState('');
     const [searchKeywords, setSearchKeywords] = useState('');
     const [searchSubject, setSearchSubject] = useState('');
@@ -56,12 +59,16 @@ const Wanted = () => {
         subject?: string;
     }>({});
 
-    // Filters (client-side)
+    // Filter toggling & selections
     const [showFilters, setShowFilters] = useState(false);
     const [filterHair, setFilterHair] = useState<string>('');
     const [filterEyes, setFilterEyes] = useState<string>('');
     const [filterRace, setFilterRace] = useState<string>('');
     const [filterNationality, setFilterNationality] = useState<string>('');
+    const [filterSex, setFilterSex] = useState<string>('');
+    const [filterPersonClass, setFilterPersonClass] = useState<string>('');
+    const [filterStatus, setFilterStatus] = useState<string>('');
+    const [filterFieldOffice, setFilterFieldOffice] = useState<string>('');
 
     const inFlightRef = React.useRef(false);
 
@@ -71,18 +78,33 @@ const Wanted = () => {
         }
     }, [isAuthenticated, navigate]);
 
-    const buildParams = (p: number) => {
-        const params: Record<string, any> = {
-            page: p,
-            pageSize: PAGE_SIZE,
-        };
-        if (activeSearchParams.title) params.title = activeSearchParams.title;
-        if (activeSearchParams.keywords) params.keywords = activeSearchParams.keywords;
-        if (activeSearchParams.subject) params.subject = activeSearchParams.subject;
-        return params;
+    const getBestImage = (images: WantedPerson['images']) => {
+        return images?.[0]?.large || images?.[0]?.original || images?.[0]?.thumb || '';
     };
 
-    const fetchWanted = useCallback(
+    const buildEndpointAndParams = (p: number) => {
+        const base = '/api/wanted';
+        const params: Record<string, any> = { page: p, pageSize: PAGE_SIZE };
+
+        const hasSearch =
+            (activeSearchParams.title && activeSearchParams.title.trim()) ||
+            (activeSearchParams.keywords && activeSearchParams.keywords.trim()) ||
+            (activeSearchParams.subject && activeSearchParams.subject.trim());
+
+        if (hasSearch) {
+            // use search endpoint
+            const endpoint = '/api/wanted/search';
+            if (activeSearchParams.title) params.title = activeSearchParams.title;
+            if (activeSearchParams.keywords) params.keywords = activeSearchParams.keywords;
+            if (activeSearchParams.subject) params.subject = activeSearchParams.subject;
+            return { endpoint, params };
+        }
+
+        // no search: base listing
+        return { endpoint: base, params };
+    };
+
+    const fetchList = useCallback(
         async (p: number, reset = false) => {
             if (inFlightRef.current) return;
             setError('');
@@ -92,12 +114,11 @@ const Wanted = () => {
             inFlightRef.current = true;
 
             try {
-                const response = await api.get<WantedListResponse>('/api/wanted', {
-                    params: buildParams(p),
-                });
+                const { endpoint, params } = buildEndpointAndParams(p);
+                const response = await api.get<WantedListResponse>(endpoint, { params });
                 const { items, total } = response.data;
 
-                setWantedList((prev) => (reset ? items : [...prev, ...items]));
+                setList((prev) => (reset ? items : [...prev, ...items]));
                 setTotalItems(total);
                 setHasMore(p * PAGE_SIZE < total);
             } catch (err: any) {
@@ -110,18 +131,18 @@ const Wanted = () => {
         [activeSearchParams, hasMore]
     );
 
-    // Initial load or when search submitted
+    // initial load or when search params change
     useEffect(() => {
         if (!isAuthenticated) return;
-        fetchWanted(1, true);
+        fetchList(1, true);
         setPage(1);
-    }, [isAuthenticated, fetchWanted]);
+    }, [isAuthenticated, activeSearchParams, fetchList]);
 
     const loadMore = () => {
         if (hasMore && !loading) {
             const next = page + 1;
             setPage(next);
-            fetchWanted(next);
+            fetchList(next);
         }
     };
 
@@ -131,20 +152,24 @@ const Wanted = () => {
             keywords: searchKeywords.trim() || undefined,
             subject: searchSubject.trim() || undefined,
         });
-        // reset page & list; effect watching activeSearchParams will trigger fetch via dependency
+        // clearing filters when new search starts is optional; not done here
+    };
+
+    const clearSearch = () => {
+        setSearchTitle('');
+        setSearchKeywords('');
+        setSearchSubject('');
+        setActiveSearchParams({});
+        setPage(1);
     };
 
     const handlePersonClick = (uid: string) => {
         navigate(`/wanted/${uid}`);
     };
 
-    const getBestImage = (images: WantedPerson['images']) => {
-        return images?.[0]?.large || images?.[0]?.original || images?.[0]?.thumb || '';
-    };
-
-    // Apply client-side filters
+    // Client-side filtering
     const filteredList = useMemo(() => {
-        return wantedList.filter((p) => {
+        return list.filter((p) => {
             if (filterHair && p.hair && filterHair.toLowerCase() !== p.hair.toLowerCase()) return false;
             if (filterEyes && p.eyes && filterEyes.toLowerCase() !== p.eyes.toLowerCase()) return false;
             if (filterRace && p.race && filterRace.toLowerCase() !== p.race.toLowerCase()) return false;
@@ -154,24 +179,72 @@ const Wanted = () => {
                 filterNationality.toLowerCase() !== p.nationality.toLowerCase()
             )
                 return false;
+            if (filterSex && p.sex && filterSex.toLowerCase() !== p.sex.toLowerCase()) return false;
+            if (
+                filterPersonClass &&
+                p.person_classification &&
+                filterPersonClass.toLowerCase() !== p.person_classification.toLowerCase()
+            )
+                return false;
+            if (filterStatus && p.status && filterStatus.toLowerCase() !== p.status.toLowerCase())
+                return false;
+            if (
+                filterFieldOffice &&
+                Array.isArray(p.field_offices) &&
+                !p.field_offices.map((f) => f.toLowerCase()).includes(filterFieldOffice.toLowerCase())
+            )
+                return false;
             return true;
         });
-    }, [wantedList, filterHair, filterEyes, filterRace, filterNationality]);
+    }, [
+        list,
+        filterHair,
+        filterEyes,
+        filterRace,
+        filterNationality,
+        filterSex,
+        filterPersonClass,
+        filterStatus,
+        filterFieldOffice,
+    ]);
 
-    // Derive filter options from current dataset
-    const hairOptions = useMemo(() => Array.from(new Set(wantedList.map((p) => p.hair).filter(Boolean) as string[])), [wantedList]);
-    const eyesOptions = useMemo(() => Array.from(new Set(wantedList.map((p) => p.eyes).filter(Boolean) as string[])), [wantedList]);
-    const raceOptions = useMemo(() => Array.from(new Set(wantedList.map((p) => p.race).filter(Boolean) as string[])), [wantedList]);
-    const nationalityOptions = useMemo(
-        () => Array.from(new Set(wantedList.map((p) => p.nationality).filter(Boolean) as string[])),
-        [wantedList]
+    // derive filter options from current fetched data
+    const makeOptions = <K extends keyof WantedPerson>(key: K) => {
+        return Array.from(
+            new Set(
+                list
+                    .map((p) => (p[key] ? String(p[key]).trim() : ''))
+                    .filter((v) => v) as string[]
+            )
+        ).sort();
+    };
+    const hairOptions = useMemo(() => makeOptions('hair'), [list]);
+    const eyesOptions = useMemo(() => makeOptions('eyes'), [list]);
+    const raceOptions = useMemo(() => makeOptions('race'), [list]);
+    const nationalityOptions = useMemo(() => makeOptions('nationality'), [list]);
+    const sexOptions = useMemo(() => makeOptions('sex'), [list]);
+    const personClassOptions = useMemo(() => makeOptions('person_classification'), [list]);
+    const statusOptions = useMemo(() => makeOptions('status'), [list]);
+    const fieldOfficeOptions = useMemo(
+        () =>
+            Array.from(
+                new Set(
+                    list
+                        .flatMap((p) => p.field_offices || [])
+                        .filter(Boolean)
+                        .map((f) => f.trim().toLowerCase())
+                )
+            )
+                .map((s) => s) // already lowercase
+                .sort(),
+        [list]
     );
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-6">FBI Most Wanted</h1>
 
-            {/* Search bar + actions */}
+            {/* Search + actions */}
             <div className="flex flex-col lg:flex-row gap-4 mb-4">
                 <div className="flex flex-wrap gap-4 flex-grow">
                     <div className="flex-1 min-w-[180px]">
@@ -213,6 +286,12 @@ const Wanted = () => {
                         Search
                     </button>
                     <button
+                        onClick={clearSearch}
+                        className="px-4 py-2 border rounded-md text-sm"
+                    >
+                        Clear
+                    </button>
+                    <button
                         onClick={() => setShowFilters((v) => !v)}
                         className="px-4 py-2 border rounded-md text-sm"
                     >
@@ -221,9 +300,9 @@ const Wanted = () => {
                 </div>
             </div>
 
-            {/* Filters panel */}
+            {/* Filters */}
             {showFilters && (
-                <div className="bg-white border rounded mb-6 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white border rounded mb-6 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
                     <div className="flex flex-col">
                         <label className="text-xs font-medium text-gray-600">Hair</label>
                         <select
@@ -239,6 +318,7 @@ const Wanted = () => {
                             ))}
                         </select>
                     </div>
+
                     <div className="flex flex-col">
                         <label className="text-xs font-medium text-gray-600">Eyes</label>
                         <select
@@ -254,6 +334,7 @@ const Wanted = () => {
                             ))}
                         </select>
                     </div>
+
                     <div className="flex flex-col">
                         <label className="text-xs font-medium text-gray-600">Race</label>
                         <select
@@ -269,6 +350,7 @@ const Wanted = () => {
                             ))}
                         </select>
                     </div>
+
                     <div className="flex flex-col">
                         <label className="text-xs font-medium text-gray-600">Nationality</label>
                         <select
@@ -284,17 +366,86 @@ const Wanted = () => {
                             ))}
                         </select>
                     </div>
-                    <div className="flex items-end">
+
+                    <div className="flex flex-col">
+                        <label className="text-xs font-medium text-gray-600">Sex</label>
+                        <select
+                            value={filterSex}
+                            onChange={(e) => setFilterSex(e.target.value)}
+                            className="border rounded px-2 py-1 text-sm"
+                        >
+                            <option value="">All</option>
+                            {sexOptions.map((s) => (
+                                <option key={s} value={s}>
+                                    {s}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col">
+                        <label className="text-xs font-medium text-gray-600">Classification</label>
+                        <select
+                            value={filterPersonClass}
+                            onChange={(e) => setFilterPersonClass(e.target.value)}
+                            className="border rounded px-2 py-1 text-sm"
+                        >
+                            <option value="">All</option>
+                            {personClassOptions.map((p) => (
+                                <option key={p} value={p}>
+                                    {p}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col">
+                        <label className="text-xs font-medium text-gray-600">Status</label>
+                        <select
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value)}
+                            className="border rounded px-2 py-1 text-sm"
+                        >
+                            <option value="">All</option>
+                            {statusOptions.map((s) => (
+                                <option key={s} value={s}>
+                                    {s}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col">
+                        <label className="text-xs font-medium text-gray-600">Field Office</label>
+                        <select
+                            value={filterFieldOffice}
+                            onChange={(e) => setFilterFieldOffice(e.target.value)}
+                            className="border rounded px-2 py-1 text-sm"
+                        >
+                            <option value="">All</option>
+                            {fieldOfficeOptions.map((f) => (
+                                <option key={f} value={f}>
+                                    {f}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-end col-span-full">
                         <button
                             onClick={() => {
                                 setFilterHair('');
                                 setFilterEyes('');
                                 setFilterRace('');
                                 setFilterNationality('');
+                                setFilterSex('');
+                                setFilterPersonClass('');
+                                setFilterStatus('');
+                                setFilterFieldOffice('');
                             }}
                             className="text-sm px-3 py-1 bg-gray-100 rounded hover:bg-gray-200"
                         >
-                            Clear Filters
+                            Clear All Filters
                         </button>
                     </div>
                 </div>
@@ -359,12 +510,13 @@ const Wanted = () => {
                                         {person.reward_text}
                                     </div>
                                 )}
-                                {(person.hair || person.eyes || person.race || person.nationality) && (
+                                {(person.hair || person.eyes || person.race || person.nationality || person.sex) && (
                                     <div className="text-xs text-gray-500 mt-1">
                                         {person.hair && <span className="mr-2">Hair: {person.hair}</span>}
                                         {person.eyes && <span className="mr-2">Eyes: {person.eyes}</span>}
                                         {person.race && <span className="mr-2">Race: {person.race}</span>}
-                                        {person.nationality && <span>Nationality: {person.nationality}</span>}
+                                        {person.nationality && <span className="mr-2">Nationality: {person.nationality}</span>}
+                                        {person.sex && <span className="mr-2">Sex: {person.sex}</span>}
                                     </div>
                                 )}
                             </div>
@@ -389,12 +541,12 @@ const Wanted = () => {
                     </button>
                 ) : (
                     <div className="text-gray-500 pt-2">
-                        Showing {wantedList.length} of {totalItems} results
+                        Showing {list.length} of {totalItems} results
                     </div>
                 )}
             </div>
 
-            {!loading && wantedList.length === 0 && !error && (
+            {!loading && list.length === 0 && !error && (
                 <div className="text-center text-gray-500 mt-8">No wanted persons found</div>
             )}
         </div>

@@ -14,7 +14,7 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, login } = useAuth();
 
     // Get redirect location if exists
     const from = location.state?.from?.pathname || '/';
@@ -23,19 +23,20 @@ const Login = () => {
         // If user is already authenticated, redirect to target page
         if (isAuthenticated) {
             navigate(from, { replace: true });
+            return;
         }
 
         // Check for remembered email
         const rememberedEmail = localStorage.getItem('rememberedEmail');
         if (rememberedEmail) {
-            setFormData(prev => ({ ...prev, email: rememberedEmail }));
+            setFormData((prev) => ({ ...prev, email: rememberedEmail }));
             setRememberMe(true);
         }
     }, [navigate, from, isAuthenticated]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -47,11 +48,10 @@ const Login = () => {
             const response = await api.post('/api/auth/login', formData);
 
             if (response.data.token) {
-                // Save token and user data
-                localStorage.setItem('token', response.data.token);
-                localStorage.setItem('user', JSON.stringify(response.data.user));
+                // Update context (persists token/user)
+                login(response.data.token, response.data.user);
 
-                // Handle remember me functionality
+                // Handle remember me functionality separately
                 if (rememberMe) {
                     localStorage.setItem('rememberedEmail', formData.email);
                 } else {
@@ -59,7 +59,7 @@ const Login = () => {
                 }
 
                 // Redirect to original requested page or home
-                navigate('/');
+                navigate(from, { replace: true });
             }
         } catch (err: any) {
             let errorMessage = 'Login failed. Please check your credentials.';
@@ -173,7 +173,7 @@ const Login = () => {
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                             strokeWidth={2}
-                                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                                         />
                                     </svg>
                                 ) : (
@@ -212,10 +212,7 @@ const Login = () => {
                                 onChange={(e) => setRememberMe(e.target.checked)}
                                 className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                             />
-                            <label
-                                htmlFor="remember-me"
-                                className="ml-2 block text-sm text-gray-900"
-                            >
+                            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
                                 Remember me
                             </label>
                         </div>

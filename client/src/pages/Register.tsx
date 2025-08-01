@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const Register = () => {
     const [formData, setFormData] = useState({
@@ -11,10 +12,21 @@ const Register = () => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
+    const { isAuthenticated, login } = useAuth();
+
+    // redirect target if any
+    const from = (location.state as any)?.from?.pathname || '/';
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            navigate(from, { replace: true });
+        }
+    }, [isAuthenticated, navigate, from]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -26,12 +38,11 @@ const Register = () => {
             const response = await api.post('/api/auth/register', formData);
 
             if (response.data.token) {
-                // Save token and user data to local storage
-                localStorage.setItem('token', response.data.token);
-                localStorage.setItem('user', JSON.stringify(response.data.user));
+                // Use context login to set auth state and persist
+                login(response.data.token, response.data.user);
 
-                // Redirect to home page
-                navigate('/');
+                // Redirect
+                navigate(from, { replace: true });
             }
         } catch (err: any) {
             setError(err.response?.data?.error || 'Registration failed. Please try again.');
@@ -49,7 +60,7 @@ const Register = () => {
                     </h2>
                     <p className="mt-2 text-center text-sm text-gray-600">
                         Already have an account?{' '}
-                        <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+                        <Link to="/login" state={{ from: (location.state as any)?.from }} className="font-medium text-indigo-600 hover:text-indigo-500">
                             Sign in
                         </Link>
                     </p>
@@ -60,7 +71,11 @@ const Register = () => {
                         <div className="flex">
                             <div className="flex-shrink-0">
                                 <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                        clipRule="evenodd"
+                                    />
                                 </svg>
                             </div>
                             <div className="ml-3">
@@ -73,7 +88,9 @@ const Register = () => {
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     <div className="rounded-md shadow-sm -space-y-px">
                         <div>
-                            <label htmlFor="username" className="sr-only">Username</label>
+                            <label htmlFor="username" className="sr-only">
+                                Username
+                            </label>
                             <input
                                 id="username"
                                 name="username"
@@ -86,7 +103,9 @@ const Register = () => {
                             />
                         </div>
                         <div>
-                            <label htmlFor="email-address" className="sr-only">Email address</label>
+                            <label htmlFor="email-address" className="sr-only">
+                                Email address
+                            </label>
                             <input
                                 id="email-address"
                                 name="email"
@@ -100,7 +119,9 @@ const Register = () => {
                             />
                         </div>
                         <div>
-                            <label htmlFor="password" className="sr-only">Password</label>
+                            <label htmlFor="password" className="sr-only">
+                                Password
+                            </label>
                             <input
                                 id="password"
                                 name="password"
